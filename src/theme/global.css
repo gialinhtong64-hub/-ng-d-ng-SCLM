@@ -1,0 +1,81 @@
+/* Global styles for SCLM App using design tokens */
+:root {
+  --color-primary: #2563eb;
+  --color-primary-dark: #1e40af;
+  --color-accent: #06b6d4;
+  --color-background: #0f172a;
+  --color-surface: #181f2e;
+  --color-surface-light: #232b3e;
+  --color-border: #334155;
+  --color-divider: #475569;
+  --color-text: #f1f5f9;
+  --color-text-secondary: #94a3b8;
+  --color-text-disabled: #64748b;
+  --color-success: #22c55e;
+  --color-warning: #facc15;
+  --color-error: #ef4444;
+  --color-info: #38bdf8;
+  --color-white: #f8fafc;
+  --color-black: #020617;
+  --color-vip: #fbbf24;
+  --color-vip-dark: #b45309;
+  --color-overlay: rgba(15,23,42,0.7);
+  --radius-card: 1.25rem;
+  --radius-button: 0.75rem;
+  --radius-input: 0.75rem;
+  --radius-full: 9999px;
+  --shadow-card: 0 4px 24px 0 rgba(16,30,54,0.12);
+  --shadow-button: 0 2px 8px 0 rgba(16,30,54,0.10);
+  --shadow-focus: 0 0 0 2px #2563eb44;
+  --spacing-xs: 0.5rem;
+  --spacing-sm: 1rem;
+  --spacing-md: 1.5rem;
+  --spacing-lg: 2rem;
+  --spacing-xl: 3rem;
+  --font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-xs: 0.75rem;
+  --font-sm: 0.875rem;
+  --font-md: 1rem;
+  --font-lg: 1.25rem;
+  --font-xl: 1.5rem;
+  --font-xxl: 2rem;
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+  --font-letter-spacing: -0.01em;
+  --transition-fast: 120ms;
+  --transition-normal: 240ms;
+  --transition-slow: 400ms;
+  --z-header: 100;
+  --z-modal: 1000;
+  --z-overlay: 900;
+  --z-nav: 200;
+  --icon-size: 1.5rem;
+  --icon-color: #94a3b8;
+}
+
+html, body, #root {
+  background: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-family);
+  letter-spacing: var(--font-letter-spacing);
+  min-height: 100vh;
+}
+
+::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+  background: transparent;
+}
+
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* Hide scrollbars but allow scrolling */
+*::-webkit-scrollbar {
+  display: none;
+}

@@ -1,0 +1,1980 @@
+import React, { useState } from "react";
+import { formatCurrency } from "../data";
+import { createDepositRequest, createWithdrawRequest } from "../supabaseApi";
+
+// ========== INTERFACES ==========
+interface BankCard {
+  id: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  isDefault: boolean;
+}
+
+interface USDTWallet {
+  id: string;
+  network: string;
+  address: string;
+  isDefault: boolean;
+}
+
+interface Transaction {
+  id: string;
+  type: "deposit" | "withdraw" | "reward" | "fee" | "internal";
+  transactionCode: string;
+  amount: number;
+  time: string;
+  status: "success" | "pending" | "failed";
+  description: string;
+}
+
+interface FinancialData {
+  totalBalance: number;
+  totalDeposit: number;
+  totalWithdraw: number;
+  profit7Days: number;
+  profit30Days: number;
+  chartData: { date: string; income: number; expense: number }[];
+}
+
+interface SecuritySettings {
+  twoFactorEnabled: boolean;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  dailyLimit: number;
+}
+
+interface LoginLog {
+  id: string;
+  deviceName: string;
+  ip: string;
+  location: string;
+  time: string;
+  status: "success" | "failed";
+}
+
+type WalletView = "main" | "history" | "financial" | "security" | "receive" | "loginLogs" | "guide";
+
+const WalletScreen: React.FC<{ 
+  balance: number; 
+  frozen: number; 
+  depositPoints?: number;
+  totalCommission?: number;  // ⭐ MỚI - Tổng hoa hồng
+}> = ({ balance, frozen, depositPoints = 0, totalCommission = 0 }) => {
+  // ========== VIEW STATE ==========
+  const [currentView, setCurrentView] = useState<WalletView>("main");
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  
+  // Balance breakdown
+  const availableBalance = balance;
+  const pendingBalance = 250000; // Demo data
+  const frozenBalance = frozen;
+
+  // ========== DEPOSIT & WITHDRAW ==========
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [depositAmount, setDepositAmount] = useState("");
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawStep, setWithdrawStep] = useState<1 | 2>(1); // Step 1: Enter amount, Step 2: Select method
+  const [selectedWithdrawMethod, setSelectedWithdrawMethod] = useState<"bank" | "usdt" | null>(null);
+  const [selectedBankCard, setSelectedBankCard] = useState<string | null>(null);
+  const [selectedUSDTWallet, setSelectedUSDTWallet] = useState<string | null>(null);
+
+  // ========== BANK CARDS ==========
+  const [showBankManager, setShowBankManager] = useState(false);
+  const [bankCards, setBankCards] = useState<BankCard[]>([
+    {
+      id: "1",
+      bankName: "Vietcombank",
+      accountNumber: "1234567890",
+      accountName: "NGUYEN VAN A",
+      isDefault: true
+    }
+  ]);
+  const [showAddBank, setShowAddBank] = useState(false);
+  const [editingBank, setEditingBank] = useState<BankCard | null>(null);
+
+  // ========== USDT WALLETS ==========
+  const [showUSDTManager, setShowUSDTManager] = useState(false);
+  const [usdtWallets, setUsdtWallets] = useState<USDTWallet[]>([
+    {
+      id: "1",
+      network: "TRC20",
+      address: "TXs8fK3Jx...9kL2mP4n",
+      isDefault: true
+    }
+  ]);
+  const [showAddUSDT, setShowAddUSDT] = useState(false);
+  const [editingUSDT, setEditingUSDT] = useState<USDTWallet | null>(null);
+
+  // ========== TRANSACTIONS ==========
+  const [transactionFilter, setTransactionFilter] = useState<"all" | Transaction["type"]>("all");
+  const [transactions] = useState<Transaction[]>([
+    { id: "1", type: "deposit", transactionCode: "DEP20241202001", amount: 5000000, time: "2024-12-02 10:30", status: "success", description: "Nạp tiền từ Vietcombank" },
+    { id: "2", type: "withdraw", transactionCode: "WD20241201002", amount: -2000000, time: "2024-12-01 15:20", status: "success", description: "Rút tiền về VCB" },
+    { id: "3", type: "reward", transactionCode: "REW20241201003", amount: 450000, time: "2024-12-01 09:10", status: "success", description: "Hoa hồng đơn hàng #ORD123" },
+    { id: "4", type: "fee", transactionCode: "FEE20241130004", amount: -50000, time: "2024-11-30 18:00", status: "success", description: "Phí xử lý rút tiền" },
+    { id: "5", type: "internal", transactionCode: "INT20241130005", amount: 1000000, time: "2024-11-30 14:00", status: "pending", description: "Chuyển nội bộ từ tài khoản phụ" },
+    { id: "6", type: "deposit", transactionCode: "DEP20241129006", amount: 3000000, time: "2024-11-29 11:25", status: "success", description: "Nạp USDT qua TRC20" },
+  ]);
+
+  // ========== FINANCIAL DATA ==========
+  const [financialData] = useState<FinancialData>({
+    totalBalance: balance,
+    totalDeposit: 45600000,
+    totalWithdraw: 12300000,
+    profit7Days: 2340000,
+    profit30Days: 8750000,
+    chartData: [
+      { date: "26/11", income: 1200000, expense: 500000 },
+      { date: "27/11", income: 800000, expense: 300000 },
+      { date: "28/11", income: 1500000, expense: 700000 },
+      { date: "29/11", income: 2100000, expense: 400000 },
+      { date: "30/11", income: 950000, expense: 600000 },
+      { date: "01/12", income: 1800000, expense: 350000 },
+      { date: "02/12", income: 2200000, expense: 800000 },
+    ]
+  });
+
+  // ========== SECURITY ==========
+  const [securitySettings, setSecuritySettings] = useState<SecuritySettings>({
+    twoFactorEnabled: true,
+    emailVerified: true,
+    phoneVerified: false,
+    dailyLimit: 50000000
+  });
+
+  // ========== LOGIN LOGS ==========
+  const [loginLogs] = useState<LoginLog[]>([
+    { id: "1", deviceName: "iPhone 14 Pro", ip: "113.161.xx.xx", location: "Hồ Chí Minh, VN", time: "2024-12-02 08:30", status: "success" },
+    { id: "2", deviceName: "Chrome on Windows", ip: "118.70.xx.xx", location: "Hà Nội, VN", time: "2024-12-01 19:45", status: "success" },
+    { id: "3", deviceName: "Samsung Galaxy S23", ip: "171.244.xx.xx", location: "Đà Nẵng, VN", time: "2024-11-30 12:15", status: "success" },
+    { id: "4", deviceName: "Unknown Device", ip: "103.56.xx.xx", location: "Unknown", time: "2024-11-29 03:22", status: "failed" },
+  ]);
+
+  // ========== DEPOSIT LOGIC ==========
+  const handleDepositClick = () => {
+    setShowDeposit(true);
+    setDepositAmount("");
+  };
+
+  const handleDepositConfirm = () => {
+    if (!depositAmount || Number(depositAmount) < 50) {
+      alert("Số tiền nạp tối thiểu là $50 USD");
+      return;
+    }
+    if (Number(depositAmount) > 10000) {
+      alert("Số tiền nạp tối đa là $10,000 USD");
+      return;
+    }
+
+    // � GỬI YÊU CẦU NẠP TIỀN CHO BANKER DUYỆT
+    const currentUser = localStorage.getItem("sclm_current_user");
+    if (!currentUser) {
+      alert("❌ Không tìm thấy thông tin user!");
+      return;
+    }
+
+    try {
+      const userData = JSON.parse(currentUser);
+      console.log('👤 User data:', userData);
+      
+      const depositRequest = {
+        id: `DEP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId: userData.id || String(userData.uid),
+        username: userData.username,
+        amount: Number(depositAmount),
+        method: "Chuyển khoản",
+        status: "pending",
+        requestTime: new Date().toISOString()
+      };
+
+      console.log('💰 Deposit request created:', depositRequest);
+
+      // Lưu vào localStorage để banker thấy
+      const depositRequestsKey = "sclm_deposit_requests";
+      const existingRequests = localStorage.getItem(depositRequestsKey);
+      const requests = existingRequests ? JSON.parse(existingRequests) : [];
+      requests.push(depositRequest);
+      localStorage.setItem(depositRequestsKey, JSON.stringify(requests));
+
+      console.log('✅ Đã lưu deposit request vào localStorage. Total requests:', requests.length);
+
+      setShowDeposit(false);
+      setDepositAmount("");
+      alert(`✅ Yêu cầu nạp ${formatCurrency(Number(depositAmount))} đã được gửi!\n\n⏳ Vui lòng chờ Banker duyệt\n💡 Số dư sẽ được cộng sau khi Banker phê duyệt`);
+    } catch (e) {
+      console.error("Error creating deposit request:", e);
+      alert("❌ Lỗi khi tạo yêu cầu nạp tiền!");
+    }
+  };
+      // NẠP TIỀN TRỰC TIẾP - KHÔNG QUA BANKER
+      const amount = Number(testCode);
+      const currentUser = localStorage.getItem("sclm_current_user");
+      if (!currentUser) {
+        alert("❌ Không tìm thấy thông tin user!");
+        return;
+      }
+
+      try {
+        const username = JSON.parse(currentUser).username;
+        const usersData = localStorage.getItem("sclm_users_v1");
+        
+        if (usersData) {
+          const users = JSON.parse(usersData);
+          const updatedUsers = users.map((u: any) => {
+            if (u.username === username) {
+              return {
+                ...u,
+                balance: (u.balance || 0) + amount,
+                walletBalance: (u.walletBalance || 0) + amount
+              };
+            }
+            return u;
+          });
+          
+          localStorage.setItem("sclm_users_v1", JSON.stringify(updatedUsers));
+          
+          setShowDeposit(false);
+          setDepositAmount("");
+          
+          alert(`✅ NẠP TIỀN THÀNH CÔNG!\n\n💰 Số tiền: ${formatCurrency(amount)}\n� Chế độ TEST/DEMO\n✨ Đã cộng vào tài khoản!\n\n🔄 Số dư sẽ cập nhật ngay lập tức.`);
+          
+          return;
+        }
+      } catch (e) {
+        console.error("Error processing direct deposit:", e);
+        alert("❌ Lỗi khi xử lý nạp tiền!");
+        return;
+      }
+    }
+    
+    // Nếu nhập text không phải số → Báo lỗi
+    if (testCode.trim() !== "" && isNaN(Number(testCode))) {
+      alert("❌ Số tiền không hợp lệ!\n\n💡 Vui lòng nhập số (VD: 1000)");
+      return;
+    }
+    
+    // Nếu để trống "" → Gửi yêu cầu cho Banker duyệt
+    console.log('📤 Đang tạo deposit request...');
+    const currentUser = localStorage.getItem("sclm_current_user");
+    if (!currentUser) {
+      alert("❌ Không tìm thấy thông tin user!");
+      return;
+    }
+
+    try {
+      const userData = JSON.parse(currentUser);
+      console.log('👤 User data:', userData);
+      
+      const depositRequest = {
+        id: `DEP_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        userId: userData.id || String(userData.uid),  // Sử dụng id hoặc uid
+        username: userData.username,
+        amount: Number(depositAmount),
+        method: "Chuyển khoản",
+        status: "pending",
+        requestTime: new Date().toISOString()
+      };
+
+      console.log('💰 Deposit request created:', depositRequest);
+
+      // Lưu vào localStorage để banker thấy
+      const depositRequestsKey = "sclm_deposit_requests";
+      const existingRequests = localStorage.getItem(depositRequestsKey);
+      const requests = existingRequests ? JSON.parse(existingRequests) : [];
+      requests.push(depositRequest);
+      localStorage.setItem(depositRequestsKey, JSON.stringify(requests));
+
+      console.log('✅ Đã lưu deposit request vào localStorage. Total requests:', requests.length);
+
+      setShowDeposit(false);
+      alert(`✅ Yêu cầu nạp ${formatCurrency(Number(depositAmount))} đã được gửi!\n\n⏳ Vui lòng chờ Banker duyệt\n💡 Bạn có thể tiếp tục sử dụng app`);
+    } catch (e) {
+      console.error("Error creating deposit request:", e);
+      alert("❌ Lỗi khi tạo yêu cầu nạp tiền!");
+    }
+  };
+
+  // ========== WITHDRAW LOGIC ==========
+  const handleWithdrawClick = () => {
+    setShowWithdraw(true);
+    setWithdrawAmount("");
+    setWithdrawStep(1);
+    setSelectedWithdrawMethod(null);
+    setSelectedBankCard(null);
+    setSelectedUSDTWallet(null);
+  };
+
+  const handleWithdrawAmountConfirm = () => {
+    const amount = Number(withdrawAmount);
+    if (!withdrawAmount || amount <= 0) {
+      alert("Vui lòng nhập số tiền hợp lệ");
+      return;
+    }
+    if (amount < 50) {
+      alert("Số tiền rút tối thiểu là $50 USD");
+      return;
+    }
+    if (amount > 10000) {
+      alert("Số tiền rút tối đa là $10,000 USD");
+      return;
+    }
+    if (amount > availableBalance) {
+      alert("Số dư khả dụng không đủ");
+      return;
+    }
+    const dailyLimitUSD = 10000; // Daily limit in USD
+    if (amount > dailyLimitUSD) {
+      alert(`Vượt hạn mức rút tiền hàng ngày (${formatCurrency(dailyLimitUSD)})`);
+      return;
+    }
+    // Chuyển sang bước 2: Chọn phương thức
+    setWithdrawStep(2);
+  };
+
+  const handleWithdrawMethodSelect = (method: "bank" | "usdt", itemId: string) => {
+    setSelectedWithdrawMethod(method);
+    if (method === "bank") {
+      setSelectedBankCard(itemId);
+      setSelectedUSDTWallet(null);
+    } else {
+      setSelectedUSDTWallet(itemId);
+      setSelectedBankCard(null);
+    }
+  };
+
+  const handleWithdrawFinalConfirm = () => {
+    if (!selectedWithdrawMethod) {
+      alert("Vui lòng chọn phương thức nhận tiền");
+      return;
+    }
+
+    const method = selectedWithdrawMethod === "bank" 
+      ? bankCards.find(b => b.id === selectedBankCard)?.bankName 
+      : usdtWallets.find(w => w.id === selectedUSDTWallet)?.network;
+
+    alert(`✅ Yêu cầu rút ${formatCurrency(Number(withdrawAmount))} đã được gửi!\n\n💳 Phương thức: ${method}\n⏳ Thời gian xử lý: 1-24 giờ\n\n📧 Bạn sẽ nhận thông báo qua email khi hoàn tất.`);
+    
+    setShowWithdraw(false);
+    setWithdrawAmount("");
+    setWithdrawStep(1);
+    setSelectedWithdrawMethod(null);
+  };
+
+  const handleMockClick = (action: string) => {
+    window.alert(`(DEMO) Chức năng "${action}" hiện đang ở chế mô phỏng.`);
+  };
+
+  const filteredTransactions = transactionFilter === "all" 
+    ? transactions 
+    : transactions.filter(t => t.type === transactionFilter);
+
+  const getTransactionIcon = (type: Transaction["type"]) => {
+    switch(type) {
+      case "deposit": return "💰";
+      case "withdraw": return "💸";
+      case "reward": return "🎁";
+      case "fee": return "📋";
+      case "internal": return "🔄";
+    }
+  };
+
+  const getStatusColor = (status: Transaction["status"]) => {
+    switch(status) {
+      case "success": return "text-green-600 bg-green-50";
+      case "pending": return "text-yellow-600 bg-yellow-50";
+      case "failed": return "text-red-600 bg-red-50";
+    }
+  };
+
+  const getStatusText = (status: Transaction["status"]) => {
+    switch(status) {
+      case "success": return "Thành công";
+      case "pending": return "Đang xử lý";
+      case "failed": return "Thất bại";
+    }
+  };
+
+  // ========== RENDER VIEWS ==========
+  if (currentView === "history") {
+    return <TransactionHistoryView 
+      transactions={filteredTransactions}
+      filter={transactionFilter}
+      onFilterChange={setTransactionFilter}
+      onBack={() => setCurrentView("main")}
+      getTransactionIcon={getTransactionIcon}
+      getStatusColor={getStatusColor}
+      getStatusText={getStatusText}
+    />;
+  }
+
+  if (currentView === "financial") {
+    return <FinancialOverviewView 
+      data={financialData}
+      onBack={() => setCurrentView("main")}
+    />;
+  }
+
+  if (currentView === "security") {
+    return <SecurityCenterView 
+      settings={securitySettings}
+      onUpdate={setSecuritySettings}
+      onBack={() => setCurrentView("main")}
+    />;
+  }
+
+  if (currentView === "receive") {
+    return <ReceiveInfoView 
+      bankCards={bankCards}
+      usdtWallets={usdtWallets}
+      onBack={() => setCurrentView("main")}
+    />;
+  }
+
+  if (currentView === "loginLogs") {
+    return <LoginLogsView 
+      logs={loginLogs}
+      onBack={() => setCurrentView("main")}
+    />;
+  }
+
+  if (currentView === "guide") {
+    return <GuideView onBack={() => setCurrentView("main")} />;
+  }
+
+  // ========== MAIN VIEW ==========
+  return (
+    <div className="flex-1 overflow-y-auto pb-24">
+      <div className="p-4 pb-3">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-[11px] text-slate-300">Xin chào!</p>
+            <p className="text-xs font-semibold text-slate-50">Demo</p>
+          </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-300">
+            <button 
+              className="h-7 w-7 rounded-full bg-slate-800 flex items-center justify-center" 
+              onClick={() => handleMockClick("Thông báo ví")}
+              aria-label="Thông báo ví"
+            >
+              <span className="text-[15px]">🔔</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Balance Card with Breakdown */}
+        <div className="rounded-3xl bg-gradient-to-r from-indigo-400 via-sky-300 to-pink-300 px-4 py-3 text-slate-900 shadow-xl">
+          <div className="flex items-center justify-between text-[11px] mb-2">
+            <span>Tổng số dư</span>
+            <span>Tích lũy nạp</span>
+          </div>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-base font-extrabold">{formatCurrency(balance)}</p>
+            <p className="text-sm font-semibold opacity-80">{formatCurrency(depositPoints)}</p>
+          </div>
+
+          {/* Balance Breakdown */}
+          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-900/10">
+            <div>
+              <p className="text-[9px] opacity-70">Khả dụng</p>
+              <p className="text-[11px] font-semibold">{formatCurrency(availableBalance)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] opacity-70">Đang chờ</p>
+              <p className="text-[11px] font-semibold">{formatCurrency(pendingBalance)}</p>
+            </div>
+            <div>
+              <p className="text-[9px] opacity-70">Tạm khóa</p>
+              <p className="text-[11px] font-semibold">{formatCurrency(frozenBalance)}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <section className="px-4">
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {/* Nạp Tiền */}
+          <button 
+            onClick={handleDepositClick}
+            className="flex flex-col items-center justify-center rounded-2xl bg-slate-900/80 border border-white/5 py-2.5 text-[10px] text-slate-100"
+          >
+            <div className="h-10 w-10 mb-1">
+              <img src="/icon-deposit.svg" alt="Nạp tiền" className="w-full h-full" />
+            </div>
+            <span>Nạp Tiền</span>
+          </button>
+
+          {/* Rút Tiền */}
+          <button 
+            onClick={handleWithdrawClick}
+            className="flex flex-col items-center justify-center rounded-2xl bg-slate-900/80 border border-white/5 py-2.5 text-[10px] text-slate-100"
+          >
+            <div className="h-10 w-10 mb-1">
+              <img src="/icon-withdraw.svg" alt="Rút tiền" className="w-full h-full" />
+            </div>
+            <span>Rút Tiền</span>
+          </button>
+
+          {/* Chi tiết */}
+          <button 
+            onClick={() => handleMockClick("Chi tiết")}
+            className="flex flex-col items-center justify-center rounded-2xl bg-slate-900/80 border border-white/5 py-2.5 text-[10px] text-slate-100"
+          >
+            <div className="h-8 w-8 rounded-2xl bg-slate-800 flex items-center justify-center mb-1">
+              <span className="text-[15px]">📄</span>
+            </div>
+            <span>Chi tiết</span>
+          </button>
+
+          {/* Cấp */}
+          <button 
+            onClick={() => handleMockClick("Cấp")}
+            className="flex flex-col items-center justify-center rounded-2xl bg-slate-900/80 border border-white/5 py-2.5 text-[10px] text-slate-100"
+          >
+            <div className="h-8 w-8 rounded-2xl bg-slate-800 flex items-center justify-center mb-1">
+              <span className="text-[15px]">🎖️</span>
+            </div>
+            <span>Cấp</span>
+          </button>
+        </div>
+        {/* Compact trust card under quick actions */}
+        <div className="mt-3 rounded-2xl bg-white/3 p-3 text-[12px] text-slate-200">
+          <div className="grid grid-cols-2 gap-2 mb-2 text-[11px]">
+            <div>
+              <div className="opacity-70">Đơn vị trung gian</div>
+              <div className="font-semibold">SCLM Global</div>
+            </div>
+            <div>
+              <div className="opacity-70">Trạng thái cửa hàng</div>
+              <div className="font-semibold">Đang kích hoạt</div>
+            </div>
+            <div>
+              <div className="opacity-70">Mức bảo vệ</div>
+              <div className="font-semibold">Chuẩn</div>
+            </div>
+            <div>
+              <div className="opacity-70">Liên kết ngân hàng</div>
+              <div className="font-semibold">Đã xác minh</div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <button onClick={() => setShowInfoModal(true)} className="text-sm px-3 py-1 rounded-full bg-slate-800/60">Xem chi tiết</button>
+            <div className="text-[11px] opacity-70">Hỗ trợ 24/7</div>
+          </div>
+        </div>
+
+        {/* Feature Menu - New Section */}
+        <div className="mt-4">
+          <h3 className="text-xs font-semibold text-slate-300 mb-3 px-1">Quản lý & Tiện ích</h3>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Transaction History */}
+            <button 
+              onClick={() => setCurrentView("history")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">📜</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Lịch sử GD</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Xem chi tiết</p>
+            </button>
+
+            {/* Financial Overview */}
+            <button 
+              onClick={() => setCurrentView("financial")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">📊</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Báo cáo TC</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Thu chi & lãi</p>
+            </button>
+
+            {/* Security Center */}
+            <button 
+              onClick={() => setCurrentView("security")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">🔐</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Bảo mật</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">2FA & Xác minh</p>
+            </button>
+
+            {/* Receive Info */}
+            <button 
+              onClick={() => setCurrentView("receive")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">📲</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Nhận tiền</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Chia sẻ TK</p>
+            </button>
+
+            {/* Login Logs */}
+            <button 
+              onClick={() => setCurrentView("loginLogs")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-orange-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">🔍</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Nhật ký</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Đăng nhập</p>
+            </button>
+
+            {/* Guide */}
+            <button 
+              onClick={() => setCurrentView("guide")}
+              className="rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center mb-2">
+                <span className="text-xl">📖</span>
+              </div>
+              <p className="text-sm font-semibold text-slate-100">Hướng dẫn</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">Nạp & Rút</p>
+            </button>
+          </div>
+        </div>
+
+        {/* Payment Methods */}
+        <div className="mt-4">
+          <h3 className="text-xs font-semibold text-slate-300 mb-3 px-1">Phương thức thanh toán</h3>
+          <div className="space-y-3">
+            {/* Bank Cards Management */}
+            <button 
+              onClick={() => setShowBankManager(true)}
+              className="w-full rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
+                    <span className="text-xl">🏦</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">Quản lý thẻ ngân hàng</p>
+                    <p className="text-xs text-slate-400">{bankCards.length} thẻ đã liên kết</p>
+                  </div>
+                </div>
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </button>
+
+            {/* USDT Wallets Management */}
+            <button 
+              onClick={() => setShowUSDTManager(true)}
+              className="w-full rounded-2xl bg-slate-900/60 p-4 text-left border border-white/5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+                    <span className="text-xl">💰</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-100">Quản lý Ví USDT</p>
+                    <p className="text-xs text-slate-400">{usdtWallets.length} ví đã liên kết</p>
+                  </div>
+                </div>
+                <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Bank Cards Manager Modal */}
+      {showBankManager && (
+        <div className="fixed inset-0 z-40 bg-slate-100 overflow-y-auto">
+          <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+            <div className="flex items-center gap-3 px-4 py-4">
+              <button 
+                onClick={() => setShowBankManager(false)}
+                className="w-8 h-8 flex items-center justify-center"
+                aria-label="Quay lại"
+              >
+                <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-lg font-semibold text-slate-900">Quản lý thẻ ngân hàng</h1>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {bankCards.map((card) => (
+              <div key={card.id} className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-semibold text-slate-900">{card.bankName}</p>
+                      {card.isDefault && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Mặc định</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600">{card.accountName}</p>
+                    <p className="text-xs text-slate-500 font-mono mt-1">{card.accountNumber}</p>
+                  </div>
+                  <button 
+                    onClick={() => setEditingBank(card)}
+                    className="text-blue-600 text-xs"
+                  >
+                    Sửa
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  {!card.isDefault && (
+                    <button 
+                      onClick={() => {
+                        setBankCards(bankCards.map(c => ({ ...c, isDefault: c.id === card.id })));
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium"
+                    >
+                      Đặt mặc định
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => {
+                      if (window.confirm('Bạn có chắc muốn xóa thẻ này?')) {
+                        setBankCards(bankCards.filter(c => c.id !== card.id));
+                      }
+                    }}
+                    className="flex-1 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button 
+              onClick={() => setShowAddBank(true)}
+              className="w-full py-3 rounded-xl bg-blue-500 text-white font-semibold text-sm"
+            >
+              + Thêm thẻ ngân hàng
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* USDT Wallets Manager Modal */}
+      {showUSDTManager && (
+        <div className="fixed inset-0 z-40 bg-slate-100 overflow-y-auto">
+          <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+            <div className="flex items-center gap-3 px-4 py-4">
+              <button 
+                onClick={() => setShowUSDTManager(false)}
+                className="w-8 h-8 flex items-center justify-center"
+                aria-label="Quay lại"
+              >
+                <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-lg font-semibold text-slate-900">Quản lý Ví USDT</h1>
+            </div>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {usdtWallets.map((wallet) => (
+              <div key={wallet.id} className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="text-sm font-semibold text-slate-900">{wallet.network}</p>
+                      {wallet.isDefault && (
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium">Mặc định</span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 font-mono break-all">{wallet.address}</p>
+                  </div>
+                  <button 
+                    onClick={() => setEditingUSDT(wallet)}
+                    className="text-blue-600 text-xs"
+                  >
+                    Sửa
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  {!wallet.isDefault && (
+                    <button 
+                      onClick={() => {
+                        setUsdtWallets(usdtWallets.map(w => ({ ...w, isDefault: w.id === wallet.id })));
+                      }}
+                      className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium"
+                    >
+                      Đặt mặc định
+                    </button>
+                  )}
+                  <button 
+                    onClick={() => {
+                      if (window.confirm('Bạn có chắc muốn xóa ví này?')) {
+                        setUsdtWallets(usdtWallets.filter(w => w.id !== wallet.id));
+                      }
+                    }}
+                    className="flex-1 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium"
+                  >
+                    Xóa
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button 
+              onClick={() => setShowAddUSDT(true)}
+              className="w-full py-3 rounded-xl bg-green-500 text-white font-semibold text-sm"
+            >
+              + Thêm Ví USDT
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Deposit Modal */}
+      {showDeposit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-slate-900">Nạp tiền vào ví</h3>
+              <button onClick={() => setShowDeposit(false)} className="text-slate-400 text-lg" aria-label="Đóng">✕</button>
+            </div>
+
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                Số tiền muốn nạp (USD)
+              </label>
+              <input
+                type="number"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                placeholder="VD: 500"
+                className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                min="50"
+                max="10000"
+              />
+              <p className="text-[10px] text-slate-500 mt-1">Tối thiểu: $50 • Tối đa: $10,000</p>
+            </div>
+
+            {/* Quick Amount Buttons */}
+            <div className="grid grid-cols-3 gap-1.5 mb-3">
+              {[50, 100, 200, 500, 1000, 5000].map(amount => (
+                <button
+                  key={amount}
+                  onClick={() => setDepositAmount(amount.toString())}
+                  className="py-1.5 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-medium hover:bg-blue-100"
+                >
+                  ${amount}
+                </button>
+              ))}
+            </div>
+
+            <div className="rounded-lg bg-blue-50 p-2.5 mb-3">
+              <p className="text-[10px] text-blue-900 font-medium mb-1">💡 Lưu ý:</p>
+              <ul className="text-[10px] text-blue-800 space-y-0.5">
+                <li>• Sau khi xác nhận, bạn sẽ được chuyển đến CSKH</li>
+                <li>• CSKH sẽ hướng dẫn hoàn tất giao dịch</li>
+                <li>• Thời gian xử lý: 5-15 phút</li>
+              </ul>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowDeposit(false)}
+                className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-medium"
+              >
+                Hủy
+              </button>
+              <button
+                onClick={handleDepositConfirm}
+                className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-sm font-medium"
+              >
+                Xác nhận nạp
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Withdraw Modal */}
+      {showWithdraw && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold text-slate-900">
+                {withdrawStep === 1 ? "Rút tiền từ ví" : "Chọn phương thức"}
+              </h3>
+              <button 
+                onClick={() => setShowWithdraw(false)} 
+                className="text-slate-400 text-lg"
+                aria-label="Đóng"
+              >✕</button>
+            </div>
+
+            {/* Step 1: Enter Amount */}
+            {withdrawStep === 1 && (
+              <>
+                <div className="mb-3">
+                  <label className="block text-xs font-medium text-slate-600 mb-1.5">
+                    Số tiền muốn rút (USD)
+                  </label>
+                  <input
+                    type="number"
+                    value={withdrawAmount}
+                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                    placeholder="VD: 100"
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                    min="50"
+                    max="10000"
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <p className="text-[10px] text-slate-500">Tối thiểu: $50 • Tối đa: $10,000</p>
+                    <p className="text-[10px] text-green-600 font-medium">
+                      Khả dụng: {formatCurrency(availableBalance)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Quick Amount Buttons */}
+                <div className="grid grid-cols-3 gap-1.5 mb-3">
+                  {[50, 100, 200, 500, 1000, 5000].map(amount => (
+                    <button
+                      key={amount}
+                      onClick={() => setWithdrawAmount(amount.toString())}
+                      disabled={amount > availableBalance}
+                      className={`py-1.5 rounded-lg text-[11px] font-medium ${
+                        amount > availableBalance
+                          ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                          : "bg-slate-100 text-slate-700 hover:bg-green-100"
+                      }`}
+                    >
+                      ${amount}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => setWithdrawAmount(Math.min(10000, availableBalance).toString())}
+                    className="py-1.5 rounded-lg bg-green-100 text-green-700 text-[11px] font-medium"
+                  >
+                    Tối đa
+                  </button>
+                </div>
+
+                <div className="rounded-lg bg-yellow-50 p-2.5 mb-3">
+                  <p className="text-[10px] text-yellow-900 font-medium mb-1">⚠️ Lưu ý:</p>
+                  <ul className="text-[10px] text-yellow-800 space-y-0.5">
+                    <li>• Hạn mức/ngày: $10,000</li>
+                    <li>• Thời gian xử lý: 1-24 giờ</li>
+                    <li>• Phí rút tiền: 0% (Miễn phí)</li>
+                  </ul>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowWithdraw(false)}
+                    className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-medium"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    onClick={handleWithdrawAmountConfirm}
+                    className="flex-1 py-2 rounded-lg bg-green-500 text-white text-sm font-medium"
+                  >
+                    Tiếp tục →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: Select Payment Method */}
+            {withdrawStep === 2 && (
+              <>
+                <div className="mb-3">
+                  <div className="rounded-lg bg-green-50 p-2.5 mb-3">
+                    <p className="text-xs text-green-900 font-semibold">
+                      Số tiền rút: {formatCurrency(Number(withdrawAmount))}
+                    </p>
+                  </div>
+
+                  <p className="text-xs font-medium text-slate-700 mb-2">
+                    Chọn tài khoản/ví nhận tiền:
+                  </p>
+
+                  {/* Bank Cards */}
+                  {bankCards.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-[10px] text-slate-500 mb-1.5">🏦 Thẻ ngân hàng</p>
+                      <div className="space-y-1.5">
+                        {bankCards.map(card => (
+                          <button
+                            key={card.id}
+                            onClick={() => handleWithdrawMethodSelect("bank", card.id)}
+                            className={`w-full p-2.5 rounded-lg border-2 text-left transition-all ${
+                              selectedBankCard === card.id
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-slate-200 bg-white hover:border-blue-300"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-900">
+                                  {card.bankName}
+                                </p>
+                                <p className="text-[10px] text-slate-600 font-mono">{card.accountNumber}</p>
+                                <p className="text-[10px] text-slate-500 truncate">{card.accountName}</p>
+                              </div>
+                              {selectedBankCard === card.id && (
+                                <span className="text-blue-600 text-lg ml-2">✓</span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* USDT Wallets */}
+                  {usdtWallets.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-slate-500 mb-1.5">💰 Ví USDT</p>
+                      <div className="space-y-1.5">
+                        {usdtWallets.map(wallet => (
+                          <button
+                            key={wallet.id}
+                            onClick={() => handleWithdrawMethodSelect("usdt", wallet.id)}
+                            className={`w-full p-2.5 rounded-lg border-2 text-left transition-all ${
+                              selectedUSDTWallet === wallet.id
+                                ? "border-green-500 bg-green-50"
+                                : "border-slate-200 bg-white hover:border-green-300"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-slate-900">
+                                  {wallet.network}
+                                </p>
+                                <p className="text-[10px] text-slate-600 font-mono break-all">{wallet.address}</p>
+                              </div>
+                              {selectedUSDTWallet === wallet.id && (
+                                <span className="text-green-600 text-lg ml-2">✓</span>
+                              )}
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setWithdrawStep(1)}
+                    className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-700 text-sm font-medium"
+                  >
+                    ← Quay lại
+                  </button>
+                  <button
+                    onClick={handleWithdrawFinalConfirm}
+                    disabled={!selectedWithdrawMethod}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+                      selectedWithdrawMethod
+                        ? "bg-green-500 text-white"
+                        : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                    }`}
+                  >
+                    Xác nhận rút
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showInfoModal && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white text-slate-900 p-4 shadow-xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Thông tin trung gian & hỗ trợ</h3>
+              <button onClick={() => setShowInfoModal(false)} className="text-slate-500">✕</button>
+            </div>
+            <div className="space-y-3 text-sm text-slate-700">
+              <div>
+                <div className="font-semibold">Thông tin pháp lý & minh bạch</div>
+                <div className="text-[13px] mt-1">Đơn vị trung gian: SCLM Global – Tiếp nhận & xử lý thông tin theo quy trình chuẩn. Mã đăng ký hoạt động: (…)</div>
+              </div>
+
+              <div>
+                <div className="font-semibold">Xác minh – Kiểm chứng cửa hàng</div>
+                <ul className="list-disc pl-5 mt-1 text-[13px]">
+                  <li>Trạng thái cửa hàng: Đang kích hoạt</li>
+                  <li>Mức bảo vệ tài khoản: Chuẩn</li>
+                  <li>Liên kết tài khoản ngân hàng: Đã xác minh</li>
+                </ul>
+              </div>
+
+              <div>
+                <div className="font-semibold">An toàn & Hỗ trợ</div>
+                <ul className="list-disc pl-5 mt-1 text-[13px]">
+                  <li>Cảnh báo rủi ro: Không có</li>
+                  <li>Trung tâm hỗ trợ: Zalo, Hotline, Email</li>
+                  <li>Theo dõi giao dịch: Log an toàn sẵn sàng</li>
+                </ul>
+              </div>
+
+              <div>
+                <div className="font-semibold">Nguồn dữ liệu tiếp nhận</div>
+                <div className="text-[13px] mt-1">Dữ liệu nhận từ: Sàn thương mại điện tử · Loại dữ liệu: mã đơn, sản phẩm, trạng thái, thời gian.</div>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <button onClick={() => setShowInfoModal(false)} className="px-3 py-2 rounded-full bg-slate-100 text-slate-700">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Bank Card Form */}
+      {(showAddBank || editingBank) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">
+              {editingBank ? 'Sửa thẻ ngân hàng' : 'Thêm thẻ ngân hàng'}
+            </h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const newCard: BankCard = {
+                id: editingBank?.id || Date.now().toString(),
+                bankName: formData.get('bankName') as string,
+                accountNumber: formData.get('accountNumber') as string,
+                accountName: formData.get('accountName') as string,
+                isDefault: bankCards.length === 0 || (formData.get('isDefault') === 'on')
+              };
+              
+              if (editingBank) {
+                setBankCards(bankCards.map(c => c.id === editingBank.id ? newCard : (newCard.isDefault ? {...c, isDefault: false} : c)));
+              } else {
+                setBankCards([...bankCards.map(c => newCard.isDefault ? {...c, isDefault: false} : c), newCard]);
+              }
+              setShowAddBank(false);
+              setEditingBank(null);
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Tên ngân hàng</label>
+                <input
+                  name="bankName"
+                  type="text"
+                  required
+                  defaultValue={editingBank?.bankName}
+                  placeholder="VD: Vietcombank, TPBank..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Số tài khoản</label>
+                <input
+                  name="accountNumber"
+                  type="text"
+                  required
+                  defaultValue={editingBank?.accountNumber}
+                  placeholder="VD: 1234567890"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Tên chủ tài khoản</label>
+                <input
+                  name="accountName"
+                  type="text"
+                  required
+                  defaultValue={editingBank?.accountName}
+                  placeholder="VD: NGUYEN VAN A"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  name="isDefault"
+                  type="checkbox"
+                  id="bankDefault"
+                  defaultChecked={editingBank?.isDefault}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="bankDefault" className="text-sm text-slate-700">Đặt làm thẻ mặc định</label>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddBank(false);
+                    setEditingBank(null);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-lg bg-blue-500 text-white font-medium"
+                >
+                  {editingBank ? 'Cập nhật' : 'Thêm'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit USDT Wallet Form */}
+      {(showAddUSDT || editingUSDT) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900 mb-4">
+              {editingUSDT ? 'Sửa Ví USDT' : 'Thêm Ví USDT'}
+            </h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const newWallet: USDTWallet = {
+                id: editingUSDT?.id || Date.now().toString(),
+                network: formData.get('network') as string,
+                address: formData.get('address') as string,
+                isDefault: usdtWallets.length === 0 || (formData.get('isDefault') === 'on')
+              };
+              
+              if (editingUSDT) {
+                setUsdtWallets(usdtWallets.map(w => w.id === editingUSDT.id ? newWallet : (newWallet.isDefault ? {...w, isDefault: false} : w)));
+              } else {
+                setUsdtWallets([...usdtWallets.map(w => newWallet.isDefault ? {...w, isDefault: false} : w), newWallet]);
+              }
+              setShowAddUSDT(false);
+              setEditingUSDT(null);
+            }} className="space-y-4">
+              <div>
+                <label htmlFor="network" className="block text-sm font-medium text-slate-700 mb-1">Mạng lưới</label>
+                <select
+                  id="network"
+                  name="network"
+                  required
+                  defaultValue={editingUSDT?.network}
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="">Chọn mạng</option>
+                  <option value="TRC20">TRC20 (Tron)</option>
+                  <option value="ERC20">ERC20 (Ethereum)</option>
+                  <option value="BEP20">BEP20 (BSC)</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Địa chỉ ví</label>
+                <input
+                  name="address"
+                  type="text"
+                  required
+                  defaultValue={editingUSDT?.address}
+                  placeholder="VD: TXs8fK3Jx...9kL2mP4n"
+                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  name="isDefault"
+                  type="checkbox"
+                  id="usdtDefault"
+                  defaultChecked={editingUSDT?.isDefault}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="usdtDefault" className="text-sm text-slate-700">Đặt làm ví mặc định</label>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddUSDT(false);
+                    setEditingUSDT(null);
+                  }}
+                  className="flex-1 py-2 rounded-lg bg-slate-100 text-slate-700 font-medium"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2 rounded-lg bg-green-500 text-white font-medium"
+                >
+                  {editingUSDT ? 'Cập nhật' : 'Thêm'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ========== SUB-COMPONENTS ==========
+
+// Transaction History View
+const TransactionHistoryView: React.FC<{
+  transactions: Transaction[];
+  filter: "all" | Transaction["type"];
+  onFilterChange: (filter: "all" | Transaction["type"]) => void;
+  onBack: () => void;
+  getTransactionIcon: (type: Transaction["type"]) => string;
+  getStatusColor: (status: Transaction["status"]) => string;
+  getStatusText: (status: Transaction["status"]) => string;
+}> = ({ transactions, filter, onFilterChange, onBack, getTransactionIcon, getStatusColor, getStatusText }) => {
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Lịch sử giao dịch</h1>
+        </div>
+        
+        {/* Filters */}
+        <div className="flex gap-2 px-4 pb-3 overflow-x-auto">
+          {[
+            { key: "all", label: "Tất cả" },
+            { key: "deposit", label: "Nạp tiền" },
+            { key: "withdraw", label: "Rút tiền" },
+            { key: "reward", label: "Thưởng" },
+            { key: "fee", label: "Phí" },
+            { key: "internal", label: "Nội bộ" }
+          ].map((item) => (
+            <button
+              key={item.key}
+              onClick={() => onFilterChange(item.key as any)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap ${
+                filter === item.key
+                  ? "bg-blue-500 text-white"
+                  : "bg-slate-200 text-slate-700"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {transactions.map((tx) => (
+          <div key={tx.id} className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center flex-shrink-0">
+                <span className="text-xl">{getTransactionIcon(tx.type)}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <p className="text-sm font-semibold text-slate-900">{tx.description}</p>
+                  <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-600" : "text-red-600"}`}>
+                    {tx.amount > 0 ? "+" : ""}{formatCurrency(tx.amount)}
+                  </p>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">Mã GD: {tx.transactionCode}</p>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-400">{tx.time}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${getStatusColor(tx.status)}`}>
+                    {getStatusText(tx.status)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Financial Overview View
+const FinancialOverviewView: React.FC<{
+  data: FinancialData;
+  onBack: () => void;
+}> = ({ data, onBack }) => {
+  const maxValue = Math.max(...data.chartData.map(d => Math.max(d.income, d.expense)));
+  
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Báo cáo tài chính</h1>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Summary Cards */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500 mb-1">Tổng số dư</p>
+            <p className="text-lg font-bold text-slate-900">{formatCurrency(data.totalBalance)}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500 mb-1">Tổng đã nạp</p>
+            <p className="text-lg font-bold text-green-600">{formatCurrency(data.totalDeposit)}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500 mb-1">Tổng đã rút</p>
+            <p className="text-lg font-bold text-red-600">{formatCurrency(data.totalWithdraw)}</p>
+          </div>
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <p className="text-xs text-slate-500 mb-1">Lãi 7 ngày</p>
+            <p className="text-lg font-bold text-blue-600">{formatCurrency(data.profit7Days)}</p>
+          </div>
+        </div>
+
+        {/* 30 Days Profit */}
+        <div className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 p-4 shadow-sm text-white">
+          <p className="text-xs opacity-90 mb-1">Lợi nhuận 30 ngày</p>
+          <p className="text-2xl font-bold">{formatCurrency(data.profit30Days)}</p>
+        </div>
+
+        {/* Chart Summary */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <h3 className="text-sm font-semibold text-slate-900 mb-3">Dữ liệu thu/chi (7 ngày)</h3>
+          <div className="space-y-2">
+            {data.chartData.map((item, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 w-12">{item.date}</span>
+                <div className="flex-1 flex gap-1 h-6">
+                  <div className="relative flex-1 bg-green-100 rounded overflow-hidden">
+                    <div 
+                      className="absolute inset-0 bg-green-400"
+                      title={`Thu: ${formatCurrency(item.income)}`}
+                    />
+                  </div>
+                  <div className="relative flex-1 bg-red-100 rounded overflow-hidden">
+                    <div 
+                      className="absolute inset-0 bg-red-400"
+                      title={`Chi: ${formatCurrency(item.expense)}`}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-center gap-4 mt-3 text-xs">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 bg-green-400 rounded" />
+              <span className="text-slate-600">Thu</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 bg-red-400 rounded" />
+              <span className="text-slate-600">Chi</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Security Center View
+const SecurityCenterView: React.FC<{
+  settings: SecuritySettings;
+  onUpdate: (settings: SecuritySettings) => void;
+  onBack: () => void;
+}> = ({ settings, onUpdate, onBack }) => {
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Trung tâm bảo mật</h1>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* 2FA */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                <span className="text-xl">🔐</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Xác thực 2 bước (2FA)</p>
+                <p className="text-xs text-slate-500">
+                  {settings.twoFactorEnabled ? "Đã bật" : "Chưa bật"}
+                </p>
+              </div>
+            </div>
+            <label className="relative inline-block w-12 h-6" title="Bật/tắt 2FA">
+              <input
+                type="checkbox"
+                checked={settings.twoFactorEnabled}
+                onChange={(e) => onUpdate({ ...settings, twoFactorEnabled: e.target.checked })}
+                className="sr-only peer"
+                aria-label="Bật/tắt xác thực 2 bước"
+              />
+              <span className="absolute inset-0 bg-slate-300 rounded-full peer-checked:bg-blue-500 transition-colors" />
+              <span className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-6" />
+            </label>
+          </div>
+        </div>
+
+        {/* Email Verification */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                <span className="text-xl">📧</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Xác minh Email</p>
+                <p className="text-xs text-slate-500">
+                  {settings.emailVerified ? "Đã xác minh" : "Chưa xác minh"}
+                </p>
+              </div>
+            </div>
+            {settings.emailVerified ? (
+              <span className="text-green-600 text-xl">✓</span>
+            ) : (
+              <button className="px-3 py-1 rounded-lg bg-blue-500 text-white text-xs font-medium">
+                Xác minh
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Phone Verification */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <span className="text-xl">📱</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Xác minh SĐT</p>
+                <p className="text-xs text-slate-500">
+                  {settings.phoneVerified ? "Đã xác minh" : "Chưa xác minh"}
+                </p>
+              </div>
+            </div>
+            {settings.phoneVerified ? (
+              <span className="text-green-600 text-xl">✓</span>
+            ) : (
+              <button className="px-3 py-1 rounded-lg bg-blue-500 text-white text-xs font-medium">
+                Xác minh
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Change Password */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center">
+                <span className="text-xl">🔑</span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Đổi mật khẩu</p>
+                <p className="text-xs text-slate-500">Cập nhật mật khẩu tài khoản</p>
+              </div>
+            </div>
+            <button className="px-3 py-1 rounded-lg bg-slate-200 text-slate-700 text-xs font-medium">
+              Đổi
+            </button>
+          </div>
+        </div>
+
+        {/* Daily Limit */}
+        <div className="rounded-xl bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center">
+              <span className="text-xl">💳</span>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Hạn mức giao dịch/ngày</p>
+              <p className="text-xs text-slate-500">Giới hạn rút tiền mỗi ngày</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input
+              type="number"
+              value={settings.dailyLimit}
+              onChange={(e) => onUpdate({ ...settings, dailyLimit: Number(e.target.value) })}
+              className="flex-1 px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-900 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Hạn mức giao dịch hàng ngày"
+              aria-label="Hạn mức giao dịch hàng ngày"
+            />
+            <span className="text-sm text-slate-600">VND</span>
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            Hiện tại: {formatCurrency(settings.dailyLimit)}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Receive Info View
+const ReceiveInfoView: React.FC<{
+  bankCards: BankCard[];
+  usdtWallets: USDTWallet[];
+  onBack: () => void;
+}> = ({ bankCards, usdtWallets, onBack }) => {
+  const defaultBank = bankCards.find(b => b.isDefault);
+  const defaultUSDT = usdtWallets.find(w => w.isDefault);
+
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text);
+    alert(`Đã copy ${label}!`);
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Thông tin nhận tiền</h1>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {/* Bank Info */}
+        {defaultBank && (
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">🏦</span>
+              <h3 className="text-sm font-semibold text-slate-900">Thông tin ngân hàng</h3>
+            </div>
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Ngân hàng:</span>
+                <span className="text-sm font-semibold text-slate-900">{defaultBank.bankName}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Số TK:</span>
+                <span className="text-sm font-mono text-slate-900">{defaultBank.accountNumber}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Chủ TK:</span>
+                <span className="text-sm font-semibold text-slate-900">{defaultBank.accountName}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => copyToClipboard(defaultBank.accountNumber, "số tài khoản")}
+                className="flex-1 py-2 rounded-lg bg-blue-500 text-white text-xs font-medium"
+              >
+                Copy số TK
+              </button>
+              <button
+                onClick={() => alert("(DEMO) Tạo QR code ngân hàng")}
+                className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-medium"
+              >
+                Tạo QR
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* USDT Info */}
+        {defaultUSDT && (
+          <div className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-2xl">💰</span>
+              <h3 className="text-sm font-semibold text-slate-900">Ví USDT</h3>
+            </div>
+            <div className="space-y-2 mb-3">
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-500">Mạng:</span>
+                <span className="text-sm font-semibold text-slate-900">{defaultUSDT.network}</span>
+              </div>
+              <div>
+                <span className="text-xs text-slate-500 block mb-1">Địa chỉ:</span>
+                <span className="text-xs font-mono text-slate-900 break-all">{defaultUSDT.address}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => copyToClipboard(defaultUSDT.address, "địa chỉ ví")}
+                className="flex-1 py-2 rounded-lg bg-green-500 text-white text-xs font-medium"
+              >
+                Copy địa chỉ
+              </button>
+              <button
+                onClick={() => alert("(DEMO) Tạo QR code USDT")}
+                className="flex-1 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-medium"
+              >
+                Tạo QR
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Instructions */}
+        <div className="rounded-xl bg-blue-50 p-4">
+          <p className="text-xs text-blue-900 font-medium mb-2">💡 Lưu ý khi nhận tiền</p>
+          <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+            <li>Kiểm tra kỹ thông tin trước khi chia sẻ</li>
+            <li>Chỉ chia sẻ với người gửi uy tín</li>
+            <li>QR code có hiệu lực trong 15 phút</li>
+            <li>Liên hệ hỗ trợ nếu chậm nhận tiền</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Login Logs View
+const LoginLogsView: React.FC<{
+  logs: LoginLog[];
+  onBack: () => void;
+}> = ({ logs, onBack }) => {
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Nhật ký đăng nhập</h1>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-2">
+        {logs.map((log) => (
+          <div key={log.id} className="rounded-xl bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                log.status === "success" ? "bg-green-100" : "bg-red-100"
+              }`}>
+                <span className="text-xl">{log.status === "success" ? "✓" : "✕"}</span>
+              </div>
+              <div className="flex-1">
+                <div className="flex items-start justify-between mb-1">
+                  <p className="text-sm font-semibold text-slate-900">{log.deviceName}</p>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                    log.status === "success" 
+                      ? "bg-green-100 text-green-700" 
+                      : "bg-red-100 text-red-700"
+                  }`}>
+                    {log.status === "success" ? "Thành công" : "Thất bại"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">IP: {log.ip}</p>
+                <p className="text-xs text-slate-500">Vị trí: {log.location}</p>
+                <p className="text-[11px] text-slate-400 mt-1">{log.time}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="p-4">
+        <div className="rounded-xl bg-yellow-50 p-4">
+          <p className="text-xs text-yellow-900 font-medium mb-2">⚠️ Phát hiện hoạt động bất thường?</p>
+          <p className="text-xs text-yellow-800 mb-3">
+            Nếu bạn không thực hiện các đăng nhập này, vui lòng đổi mật khẩu ngay lập tức và liên hệ hỗ trợ.
+          </p>
+          <button className="w-full py-2 rounded-lg bg-yellow-600 text-white text-xs font-medium">
+            Báo cáo ngay
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Guide View
+const GuideView: React.FC<{
+  onBack: () => void;
+}> = ({ onBack }) => {
+  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
+
+  return (
+    <div className="flex-1 overflow-y-auto pb-24 bg-slate-100">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+        <div className="flex items-center gap-3 px-4 py-4">
+          <button onClick={onBack} className="w-8 h-8 flex items-center justify-center" aria-label="Quay lại">
+            <svg className="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <h1 className="text-lg font-semibold text-slate-900">Hướng dẫn</h1>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex px-4 pb-3 gap-2">
+          <button
+            onClick={() => setActiveTab("deposit")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+              activeTab === "deposit"
+                ? "bg-blue-500 text-white"
+                : "bg-slate-200 text-slate-700"
+            }`}
+          >
+            Nạp tiền
+          </button>
+          <button
+            onClick={() => setActiveTab("withdraw")}
+            className={`flex-1 py-2 rounded-lg text-sm font-medium ${
+              activeTab === "withdraw"
+                ? "bg-blue-500 text-white"
+                : "bg-slate-200 text-slate-700"
+            }`}
+          >
+            Rút tiền
+          </button>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-4">
+        {activeTab === "deposit" ? (
+          <>
+            {/* Deposit Guide */}
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">📥 Cách nạp tiền</h3>
+              <ol className="space-y-2 text-sm text-slate-700">
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">1.</span>
+                  <span>Nhấn nút "Nạp Tiền" trên màn hình Ví</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">2.</span>
+                  <span>Chọn phương thức: Ngân hàng hoặc USDT</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">3.</span>
+                  <span>Nhập số tiền cần nạp và xác nhận</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">4.</span>
+                  <span>Chuyển khoản theo thông tin hiển thị</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">5.</span>
+                  <span>Chờ xác nhận (5-15 phút)</span>
+                </li>
+              </ol>
+            </div>
+
+            <div className="rounded-xl bg-green-50 p-4">
+              <p className="text-xs text-green-900 font-medium mb-2">💡 Lưu ý quan trọng</p>
+              <ul className="text-xs text-green-800 space-y-1 list-disc list-inside">
+                <li>Ghi đúng nội dung chuyển khoản</li>
+                <li>Không nạp dưới mức tối thiểu (100,000 VND)</li>
+                <li>Lưu biên lai giao dịch</li>
+                <li>USDT: Kiểm tra đúng mạng (TRC20/ERC20)</li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">❓ Lý do chậm xử lý</h3>
+              <ul className="space-y-2 text-xs text-slate-700">
+                <li>• Ngân hàng xử lý chậm (giờ cao điểm)</li>
+                <li>• Sai nội dung chuyển khoản</li>
+                <li>• Số tiền không khớp</li>
+                <li>• Giao dịch USDT chưa đủ xác nhận</li>
+              </ul>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Withdraw Guide */}
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">📤 Cách rút tiền</h3>
+              <ol className="space-y-2 text-sm text-slate-700">
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">1.</span>
+                  <span>Nhấn nút "Rút Tiền" trên màn hình Ví</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">2.</span>
+                  <span>Chọn tài khoản/ví nhận tiền</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">3.</span>
+                  <span>Nhập số tiền muốn rút</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">4.</span>
+                  <span>Xác thực OTP/2FA nếu có</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-blue-600">5.</span>
+                  <span>Chờ duyệt và chuyển tiền (1-24h)</span>
+                </li>
+              </ol>
+            </div>
+
+            <div className="rounded-xl bg-yellow-50 p-4">
+              <p className="text-xs text-yellow-900 font-medium mb-2">⚠️ Điều kiện rút tiền</p>
+              <ul className="text-xs text-yellow-800 space-y-1 list-disc list-inside">
+                <li>Tài khoản đã xác minh đầy đủ</li>
+                <li>Số dư khả dụng đủ (không tính số bị khóa)</li>
+                <li>Không vượt hạn mức ngày</li>
+                <li>Không có giao dịch đang chờ</li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">🚫 Lỗi thường gặp</h3>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-semibold text-slate-900">Không đủ số dư khả dụng</p>
+                  <p className="text-xs text-slate-600">→ Chờ giao dịch đang chờ hoàn tất</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-900">Vượt hạn mức ngày</p>
+                  <p className="text-xs text-slate-600">→ Rút vào ngày hôm sau hoặc liên hệ tăng hạn mức</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-slate-900">Thông tin TK không hợp lệ</p>
+                  <p className="text-xs text-slate-600">→ Kiểm tra lại thông tin thẻ/ví đã liên kết</p>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Contact Support */}
+        <div className="rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 p-4 text-white">
+          <p className="text-sm font-semibold mb-2">💬 Cần hỗ trợ thêm?</p>
+          <p className="text-xs mb-3">Đội ngũ hỗ trợ 24/7 sẵn sàng giúp bạn</p>
+          <div className="flex gap-2">
+            <button className="flex-1 py-2 rounded-lg bg-white text-blue-600 text-xs font-medium">
+              Chat Zalo
+            </button>
+            <button className="flex-1 py-2 rounded-lg bg-white/20 text-white text-xs font-medium">
+              Gọi Hotline
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WalletScreen;

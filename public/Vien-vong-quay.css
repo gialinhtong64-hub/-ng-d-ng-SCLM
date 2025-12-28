@@ -1,0 +1,29 @@
+/* Viền vòng quay sịn, bo tròn, hiệu ứng màu mè */
+.Vien-vong-quay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 92%;
+    height: 92%;
+    border-radius: 50%;
+    border: 10px solid;
+    border-image: linear-gradient(135deg, #FFD700 0%, #FF6B6B 25%, #4ECDC4 50%, #A29BFE 75%, #FFD700 100%) 1;
+    box-shadow: 0 0 32px 8px #FFD70080, 0 0 0 8px #fff, 0 8px 30px rgba(0, 0, 0, 0.18);
+    z-index: 20;
+}
+
+/* Phần đế bẹ đỡ vòng quay */
+.de-be-do {
+    position: absolute;
+    left: 50%;
+    bottom: -40px;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 40px;
+    background: linear-gradient(135deg, #FFD700 0%, #A29BFE 100%);
+    border-radius: 0 0 40px 40px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    border: 3px solid #fff;
+    z-index: 10;
+}

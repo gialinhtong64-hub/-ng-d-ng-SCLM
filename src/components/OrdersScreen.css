@@ -1,0 +1,8 @@
+/* OrdersScreen custom font styles */
+.ordersscreen-sfpro {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+}
+.ordersscreen-sfpro-wide {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.08em;
+}

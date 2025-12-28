@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Banner & Logo Loading</title>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            background: #2a2a2a;
+            border-radius: 8px;
+        }
+        img {
+            max-width: 300px;
+            margin: 10px;
+            border: 2px solid #4a4a4a;
+            border-radius: 8px;
+        }
+        .error {
+            border-color: red;
+        }
+        .success {
+            border-color: green;
+        }
+        h2 {
+            color: #00ff88;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Banner & Logo Loading</h1>
+    
+    <div class="test-section">
+        <h2>📸 Banner Images (7 banners)</h2>
+        <div id="banners"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>👑 VIP Logos (VIP 0-8)</h2>
+        <div id="vip-logos"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>🎨 Other Logos</h2>
+        <div id="other-logos"></div>
+    </div>
+
+    <script>
+        // Test banners
+        const bannersDiv = document.getElementById('banners');
+        for (let i = 1; i <= 7; i++) {
+            const img = document.createElement('img');
+            img.src = `/banners/banner${i}.jpg`;
+            img.alt = `Banner ${i}`;
+            img.onload = () => {
+                img.classList.add('success');
+                console.log(`✅ Banner ${i} loaded`);
+            };
+            img.onerror = () => {
+                img.classList.add('error');
+                img.alt = `❌ Banner ${i} failed`;
+                console.error(`❌ Banner ${i} failed to load`);
+            };
+            bannersDiv.appendChild(img);
+        }
+
+        // Test VIP logos
+        const vipLogosDiv = document.getElementById('vip-logos');
+        for (let i = 0; i <= 8; i++) {
+            const img = document.createElement('img');
+            img.src = `/banners/logo-vip${i}.jpg.png`;
+            img.alt = `VIP ${i}`;
+            img.onload = () => {
+                img.classList.add('success');
+                console.log(`✅ VIP ${i} logo loaded`);
+            };
+            img.onerror = () => {
+                img.classList.add('error');
+                img.alt = `❌ VIP ${i} failed`;
+                console.error(`❌ VIP ${i} logo failed to load`);
+            };
+            vipLogosDiv.appendChild(img);
+        }
+
+        // Test other logos
+        const otherLogosDiv = document.getElementById('other-logos');
+        const otherLogos = [
+            'logo-naptien.png',
+            'logo-ruttien.png',
+            'logo-don-hang.jpg.png',
+            'logo-sukien.jpg.jpg',
+            'Logo-cskh.jpg'
+        ];
+        
+        otherLogos.forEach(logo => {
+            const img = document.createElement('img');
+            img.src = `/banners/${logo}`;
+            img.alt = logo;
+            img.onload = () => {
+                img.classList.add('success');
+                console.log(`✅ ${logo} loaded`);
+            };
+            img.onerror = () => {
+                img.classList.add('error');
+                img.alt = `❌ ${logo} failed`;
+                console.error(`❌ ${logo} failed to load`);
+            };
+            otherLogosDiv.appendChild(img);
+        });
+    </script>
+</body>
+</html>

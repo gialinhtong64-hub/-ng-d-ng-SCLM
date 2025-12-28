@@ -1,0 +1,72 @@
+@import "./theme/global.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force hide all scrollbars for all elements (Webkit, Firefox, Edge, IE) */
+* {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-900 text-slate-50;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
+}
+
+/* Toast animation: slide up + fade */
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast-enter {
+  animation: toast-enter 340ms cubic-bezier(.2, .8, .2, 1);
+}
+
+/* Floating CSKH button positioning */
+[data-x][data-y] {
+  left: var(--pos-x, 0);
+  top: var(--pos-y, 0);
+}
+
+/* Auto-scrolling marquee animation */
+@keyframes scroll-up {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-50%);
+  }
+}
+
+.animate-scroll-up {
+  animation: scroll-up 30s linear infinite;
+}
+
+.animate-scroll-up:hover {
+  animation-play-state: paused;
+}

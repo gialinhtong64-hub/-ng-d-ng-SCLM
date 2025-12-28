@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400">
+  <defs>
+    <linearGradient id="g6" x1="0" x2="1">
+      <stop offset="0" stop-color="#7c3aed" />
+      <stop offset="1" stop-color="#06b6d4" />
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#g6)" rx="24"/>
+  <text x="50%" y="50%" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="48" font-weight="700" text-anchor="middle" dominant-baseline="middle">Banner 6 — Mua sắm</text>
+</svg>
